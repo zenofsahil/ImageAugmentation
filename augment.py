@@ -1,157 +1,107 @@
-import Augmentor
-import argparse
 import os
-from tqdm import tqdm
 import numpy as np
 import random
+import argparse
+import imgaug as ia
+from imgaug import augmenters as iaa
+from tqdm import tqdm
 from glob import glob
 from PIL import Image
-from collections import namedtuple
 from itertools import cycle
+
+from foreground_image import ForegroundImage
+from superimposed_image import SuperimposedImage
 
 """
 This script will apply distortions such as cropping/rotation/skew on the foreground images
 and then superimpose the specified number of such foreground images on different background
 images, returning the bounding boxes and labels of the foreground images on the new backgrounds.
 
+
+TODO
 A further augmentation of the superimposed images will be done in the form of random distortions
 to color, brightness, sharpness, contrast etc. (Only distortions that will preserve the 
 new bounding box and coordinates of the foregrounds on the new background images. [TODO]
 """
 
-class ForegroundImage(object):
-    """
-    The foreground image class to hold data on the foreground image.
-    """
-    def __init__(self, image, label, xmin, ymin, xmax, ymax, angle):
-        self.image = image
-        self.label = label
-        self.xmin = xmin
-        self.ymin = ymin
-        self.xmax = xmax
-        self.ymax = ymax
-        self.angle = angle
 
+### Augmentation pipeline taken as is from https://github.com/aleju/imgaug ###
 
-class SuperimposedImage(object):
-    """
-    Wrapper class containing the pipeline of foreground images to be augmented, 
-    the background image path that the augmented foreground images are to be superimposed on
-    and methods to perform the superimposition.
+# Sometimes(0.5, ...) applies the given augmenter in 50% of all cases,
+# e.g. Sometimes(0.5, GaussianBlur(0.3)) would blur roughly every second image.
+sometimes = lambda aug: iaa.Sometimes(0.5, aug)
 
-    Each background image and a set of newly augmented foreground images correspond to a 
-    SuperimposedImage class.
-    """
-
-    def __init__(self, foreground_pipeline, foreground_num, background_path):
-        """
-        An instance of SuperimposedImage class.
-
-        :param foreground_pipeline: Pipeline generator object instantiated with foreground images.
-        :param foreground_num: Number of foreground images to be superimposed onto the background.
-        :param background_path: Path of the background image.
-
-        """
-        self.foreground_pipeline = foreground_pipeline
-        self.foreground_num = foreground_num
-        self.foreground_generator = self.foreground_pipeline.keras_generator(
-                batch_size=foreground_num, scaled=False)
-
-        self.foreground_images, self.foreground_labels = next(
-                self.foreground_generator)
-
-        self.class_labels = {v : k for k, v in dict(self.foreground_pipeline.class_labels).items()}
-        self.foreground_labels = [self.class_labels[np.argmax(lab)] for lab in self.foreground_labels]
-
-        # Convert foreground images that are numpy arrays to PIL images
-        # and create named tuples to hold co-ordinate data.
-        ForegroundImage = namedtuple(
-                'ForegroundImage',
-                'image, label, xmin, ymin, xmax, ymax')
-        pil_foreground_images = []
-        for image, label in zip(self.foreground_images, self.foreground_labels):
-            image = Image.fromarray(image)
-            image = ForegroundImage(image, label, 0, 0, 0, 0)
-            pil_foreground_images.append(image)
-
-        self.foreground_images = pil_foreground_images
-
-        self.background_path = background_path
-        self.background_image = Image.open(self.background_path)
-        self.background_height = self.background_image.height
-        self.background_width = self.background_image.width
-
-        self.superimposed_image = self.background_image.copy()
-
-        self.process_image()
-
-    def process_image(self):
-        """ 
-        Randomly resize each augmented foreground image and paste it onto a 
-        random (x, y) coordinate on the background image.
-        """
-
-        new_fg_images = []
-        for fg_image in self.foreground_images:
-            fg_image = self.random_resize(fg_image.image)
-
-            xmin = random.randint(
-                0,
-                self.background_width - fg_image.image.width - 1)
-            ymin = random.randint(
-                0,
-                self.background_height - fg_image.image.height - 1)
-
-            fg_image.xmin = xmin
-            fg_image.ymin = ymin
-            fg_image.xmax = xmin + fg_image.image.width
-            fg_image.ymax = ymin + fg_image.image.height
-
-            self.superimposed_image.paste(
-                    fg_image.image,
-                    (fg_image.xmin, fg_image.ymin),
-                    fg_image.image)
-
-            new_fg_images.append(fg_image)
-
-        self.foreground_images = new_fg_images
-
-
-    def random_resize(self, fg_image):
-        """
-        Randomly resize the foreground image to a certain scale.
-        The minimum size it will be resized to remains static and can be defined inside 
-        this function. The maximum size will depend on the dimensions of the background image
-        and the num of foreground images to be superimposed. 
-
-        :param fg_image: The foreground as a PIL image that is to be resized.
-        :returns: The resized foreground as a PIL image.
-        """
-        min_scale = 0.05
-        max_scale = (1 / self.foreground_num)
-
-        scale_factor = np.random.uniform(min_scale, max_scale)
-        x = np.floor(scale_factor * self.background_width)
-        y = np.floor(scale_factor * self.background_height)
-
-        resized_fg_image = fg_image.resize((int(x), int(y)))
-
-        return resized_fg_image
-
-    def show(self):
-        """
-        Visualize the superimposed with bounding boxes
-        """
-        display_image = self.superimposed_image.copy()
-
-        for image in self.foreground_images:
-
-            draw = ImageDraw.Draw(display_image)
-            draw.rectangle(((image.xmin, image.ymin), (image.xmax, image.ymax)), outline="red")
-            draw.text((image.xmin, image.ymin), image.label, fill='red')
-
-        display_image.show()
-
+# Define our sequence of augmentation steps that will be applied to every image
+# All augmenters with per_channel=0.5 will sample one value _per image_
+# in 50% of all cases. In all other cases they will sample new values
+# _per channel_.
+seq = iaa.Sequential(
+    [
+        # apply the following augmenters to most images
+        iaa.Fliplr(0.5), # horizontally flip 50% of all images
+        iaa.Flipud(0.2), # vertically flip 20% of all images
+        # crop images by -5% to 10% of their height/width
+        sometimes(iaa.CropAndPad(
+            percent=(-0.05, 0.1),
+            pad_mode=ia.ALL,
+            pad_cval=(0, 255)
+        )),
+        sometimes(iaa.Affine(
+            scale={"x": (0.8, 1.2), "y": (0.8, 1.2)}, # scale images to 80-120% of their size, individually per axis
+            translate_percent={"x": (-0.2, 0.2), "y": (-0.2, 0.2)}, # translate by -20 to +20 percent (per axis)
+            rotate=(-45, 45), # rotate by -45 to +45 degrees
+            shear=(-16, 16), # shear by -16 to +16 degrees
+            order=[0, 1], # use nearest neighbour or bilinear interpolation (fast)
+            cval=(0, 255), # if mode is constant, use a cval between 0 and 255
+            mode=ia.ALL # use any of scikit-image's warping modes (see 2nd image from the top for examples)
+        )),
+        # execute 0 to 5 of the following (less important) augmenters per image
+        # don't execute all of them, as that would often be way too strong
+        iaa.SomeOf((0, 5),
+            [
+                sometimes(iaa.Superpixels(p_replace=(0, 1.0), n_segments=(20, 200))), # convert images into their superpixel representation
+                iaa.OneOf([
+                    iaa.GaussianBlur((0, 3.0)), # blur images with a sigma between 0 and 3.0
+                    iaa.AverageBlur(k=(2, 7)), # blur image using local means with kernel sizes between 2 and 7
+                    iaa.MedianBlur(k=(3, 11)), # blur image using local medians with kernel sizes between 2 and 7
+                ]),
+                iaa.Sharpen(alpha=(0, 1.0), lightness=(0.75, 1.5)), # sharpen images
+                iaa.Emboss(alpha=(0, 1.0), strength=(0, 2.0)), # emboss images
+                # search either for all edges or for directed edges,
+                # blend the result with the original image using a blobby mask
+                iaa.SimplexNoiseAlpha(iaa.OneOf([
+                    iaa.EdgeDetect(alpha=(0.5, 1.0)),
+                    iaa.DirectedEdgeDetect(alpha=(0.5, 1.0), direction=(0.0, 1.0)),
+                ])),
+                iaa.AdditiveGaussianNoise(loc=0, scale=(0.0, 0.05*255), per_channel=0.5), # add gaussian noise to images
+                iaa.OneOf([
+                    iaa.Dropout((0.01, 0.1), per_channel=0.5), # randomly remove up to 10% of the pixels
+                    iaa.CoarseDropout((0.03, 0.15), size_percent=(0.02, 0.05), per_channel=0.2),
+                ]),
+                iaa.Invert(0.05, per_channel=True), # invert color channels
+                iaa.Add((-10, 10), per_channel=0.5), # change brightness of images (by -10 to 10 of original value)
+                iaa.AddToHueAndSaturation((-20, 20)), # change hue and saturation
+                # either change the brightness of the whole image (sometimes
+                # per channel) or change the brightness of subareas
+                iaa.OneOf([
+                    iaa.Multiply((0.5, 1.5), per_channel=0.5),
+                    iaa.FrequencyNoiseAlpha(
+                        exponent=(-4, 0),
+                        first=iaa.Multiply((0.5, 1.5), per_channel=True),
+                        second=iaa.ContrastNormalization((0.5, 2.0))
+                    )
+                ]),
+                iaa.ContrastNormalization((0.5, 2.0), per_channel=0.5), # improve or worsen the contrast
+                # iaa.Grayscale(alpha=(0.0, 1.0)),
+                sometimes(iaa.ElasticTransformation(alpha=(0.5, 3.5), sigma=0.25)), # move pixels locally around (with random strengths)
+                sometimes(iaa.PiecewiseAffine(scale=(0.01, 0.05))), # sometimes move parts of the image around
+                sometimes(iaa.PerspectiveTransform(scale=(0.01, 0.1)))
+            ],
+            random_order=True
+        )
+    ],
+    random_order=True
+)
 
 if __name__ == '__main__':
     description = "Create augmented dataset with set of foreground images imposed on different backgrounds."
@@ -209,40 +159,40 @@ if __name__ == '__main__':
     output_dir = args.output
     label_file_path = args.labelfile
 
-    pipeline = Augmentor.Pipeline(foreground_path)
+    # pipeline = Augmentor.Pipeline(foreground_path)
 
-    ## Pipeline operations. We can comment out the ones we do not need.
-    pipeline.flip_random(probability=0.7)
-    pipeline.gaussian_distortion(
-            probability=0.5,
-            grid_width=2,
-            grid_height=2,
-            magnitude=5,
-            corner='bell',
-            method='in')
-    pipeline.random_color(
-            probability=0.5,
-            min_factor=0.4,
-            max_factor=1.0)
-    pipeline.random_contrast(
-            probability=0.5,
-            min_factor=0.4,
-            max_factor=1.0)
-    pipeline.random_distortion(
-            probability=0.9,
-            grid_width=5,
-            grid_height=5,
-            magnitude=6)
-    pipeline.random_erasing(
-            probability=0.8,
-            rectangle_area=0.3)
-    pipeline.rotate_random_90(probability=0.5)
-    pipeline.scale(probability=0.3, scale_factor=1.5)
-    pipeline.shear(
-            probability=0.5,
-            max_shear_left=20,
-            max_shear_right=20)
-    pipeline.skew(probability=0.5)
+    # ## Pipeline operations. We can comment out the ones we do not need.
+    # pipeline.flip_random(probability=0.7)
+    # pipeline.gaussian_distortion(
+    #         probability=0.5,
+    #         grid_width=2,
+    #         grid_height=2,
+    #         magnitude=5,
+    #         corner='bell',
+    #         method='in')
+    # pipeline.random_color(
+    #         probability=0.5,
+    #         min_factor=0.4,
+    #         max_factor=1.0)
+    # pipeline.random_contrast(
+    #         probability=0.5,
+    #         min_factor=0.4,
+    #         max_factor=1.0)
+    # pipeline.random_distortion(
+    #         probability=0.9,
+    #         grid_width=5,
+    #         grid_height=5,
+    #         magnitude=6)
+    # pipeline.random_erasing(
+    #         probability=0.8,
+    #         rectangle_area=0.3)
+    # pipeline.rotate_random_90(probability=0.5)
+    # pipeline.scale(probability=0.3, scale_factor=1.5)
+    # pipeline.shear(
+    #         probability=0.5,
+    #         max_shear_left=20,
+    #         max_shear_right=20)
+    # pipeline.skew(probability=0.5)
 
 
     with open(args.labelfile, 'w') as label_file:
@@ -258,8 +208,26 @@ if __name__ == '__main__':
 
         backgrounds = cycle(glob(os.path.join(background_path, '*')))
 
+        fg_image_dirs = glob(os.path.join(foreground_path, '*'))
+        fg_image_classes = [glob(os.path.join(image_dir, '*')) for image_dir in fg_image_dirs]
+        fg_image_paths = [image_path for image_class in fg_image_classes for image_path in image_class]
+
+        # Repeat lists to be sampled so that there is a possibility of getting the same 
+        # distinct image in the same sample.
+        fg_images = [Image.open(image) for image in fg_image_paths]
+        fg_images = fg_images*3
+
+        fg_image_labels = list(map(lambda x: x.split('/')[-2:][0], fg_image_paths))
+        fg_image_labels = fg_image_labels*3
+
+        fg_sampler = list(zip(fg_images, fg_image_labels))
+
+        # Sample `foreground_num` number of images.
+
         for ix in tqdm(range(1, no_images + 1)):
-            image = SuperimposedImage(pipeline, num_foreground, next(backgrounds))
+            # image = SuperimposedImage(pipeline, num_foreground, foreground_path, next(backgrounds))
+            fg_samples = random.sample(fg_sampler, num_foreground)
+            image = SuperimposedImage(seq, fg_samples, next(backgrounds))
             image.superimposed_image.convert('RGB').save(os.path.join(output_dir, f'{ix}.jpg'))
 
             for fg_image in image.foreground_images:

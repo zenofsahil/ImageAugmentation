@@ -10,7 +10,7 @@ Requirements and Installation
 
 * OpenCV
 * Numpy
-* [ Augmentor ](https://github.com/mdbloice/Augmentor)
+* [ imgaug ](https://github.com/aleju/imgaug)
 * PIL
 
 
