@@ -19,6 +19,20 @@ to color, brightness, sharpness, contrast etc. (Only distortions that will prese
 new bounding box and coordinates of the foregrounds on the new background images. [TODO]
 """
 
+class ForegroundImage(object):
+    """
+    The foreground image class to hold data on the foreground image.
+    """
+    def __init__(self, image, label, xmin, ymin, xmax, ymax, angle):
+        self.image = image
+        self.label = label
+        self.xmin = xmin
+        self.ymin = ymin
+        self.xmax = xmax
+        self.ymax = ymax
+        self.angle = angle
+
+
 class SuperimposedImage(object):
     """
     Wrapper class containing the pipeline of foreground images to be augmented, 
@@ -79,7 +93,7 @@ class SuperimposedImage(object):
 
         new_fg_images = []
         for fg_image in self.foreground_images:
-            fg_image = fg_image._replace(image=self.random_resize(fg_image.image))
+            fg_image = self.random_resize(fg_image.image)
 
             xmin = random.randint(
                 0,
@@ -88,10 +102,10 @@ class SuperimposedImage(object):
                 0,
                 self.background_height - fg_image.image.height - 1)
 
-            fg_image = fg_image._replace(xmin=xmin)
-            fg_image = fg_image._replace(ymin=ymin)
-            fg_image = fg_image._replace(xmax=xmin + fg_image.image.width)
-            fg_image = fg_image._replace(ymax=ymin + fg_image.image.height)
+            fg_image.xmin = xmin
+            fg_image.ymin = ymin
+            fg_image.xmax = xmin + fg_image.image.width
+            fg_image.ymax = ymin + fg_image.image.height
 
             self.superimposed_image.paste(
                     fg_image.image,
@@ -258,4 +272,3 @@ if __name__ == '__main__':
                         f'{fg_image.ymin}' + ',' \
                         f'{fg_image.xmax}' + ',' \
                         f'{fg_image.ymax}\n')
-
