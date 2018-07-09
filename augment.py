@@ -159,42 +159,6 @@ if __name__ == '__main__':
     output_dir = args.output
     label_file_path = args.labelfile
 
-    # pipeline = Augmentor.Pipeline(foreground_path)
-
-    # ## Pipeline operations. We can comment out the ones we do not need.
-    # pipeline.flip_random(probability=0.7)
-    # pipeline.gaussian_distortion(
-    #         probability=0.5,
-    #         grid_width=2,
-    #         grid_height=2,
-    #         magnitude=5,
-    #         corner='bell',
-    #         method='in')
-    # pipeline.random_color(
-    #         probability=0.5,
-    #         min_factor=0.4,
-    #         max_factor=1.0)
-    # pipeline.random_contrast(
-    #         probability=0.5,
-    #         min_factor=0.4,
-    #         max_factor=1.0)
-    # pipeline.random_distortion(
-    #         probability=0.9,
-    #         grid_width=5,
-    #         grid_height=5,
-    #         magnitude=6)
-    # pipeline.random_erasing(
-    #         probability=0.8,
-    #         rectangle_area=0.3)
-    # pipeline.rotate_random_90(probability=0.5)
-    # pipeline.scale(probability=0.3, scale_factor=1.5)
-    # pipeline.shear(
-    #         probability=0.5,
-    #         max_shear_left=20,
-    #         max_shear_right=20)
-    # pipeline.skew(probability=0.5)
-
-
     with open(args.labelfile, 'w') as label_file:
         label_file.write(
                 "filename" + "," + \
@@ -222,10 +186,9 @@ if __name__ == '__main__':
 
         fg_sampler = list(zip(fg_images, fg_image_labels))
 
-        # Sample `foreground_num` number of images.
 
         for ix in tqdm(range(1, no_images + 1)):
-            # image = SuperimposedImage(pipeline, num_foreground, foreground_path, next(backgrounds))
+            # Sample `foreground_num` number of images.
             fg_samples = random.sample(fg_sampler, num_foreground)
             image = SuperimposedImage(seq, fg_samples, next(backgrounds))
             image.superimposed_image.convert('RGB').save(os.path.join(output_dir, f'{ix}.jpg'))

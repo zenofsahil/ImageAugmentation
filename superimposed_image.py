@@ -14,7 +14,6 @@ class SuperimposedImage(object):
     SuperimposedImage class.
     """
 
-    #def __init__(self, foreground_pipeline, foreground_num, background_path):
     def __init__(self, pipeline, fg_samples, background_path):
         """
         An instance of SuperimposedImage class.
@@ -31,35 +30,7 @@ class SuperimposedImage(object):
 
         self.pipeline = pipeline
         self.foreground_num = len(fg_samples)
-        # self.foreground_generator = self.foreground_pipeline.keras_generator(
-        #         batch_size=foreground_num, scaled=False)
-
-        # self.foreground_images, self.foreground_labels = next(
-        #         self.foreground_generator)
-
-        #self.foreground_images, self.foreground_labels = self.augmented_images()
         self.foreground_images = self.populate_foreground_images(fg_samples)
-        # self.foreground_images = []
-        # self.populate_foreground_images()
-
-
-        # self.class_labels = {v : k for k, v in dict(self.foreground_pipeline.class_labels).items()}
-        # self.foreground_labels = [self.class_labels[np.argmax(lab)] for lab in self.foreground_labels]
-
-        # Convert foreground images that are numpy arrays to PIL images
-        # and create named tuples to hold co-ordinate data.
-        # ForegroundImage = namedtuple(
-        #         'ForegroundImage',
-        #         'image, label, xmin, ymin, xmax, ymax')
-
-        # pil_foreground_images = []
-
-        # for image, label in zip(self.foreground_images, self.foreground_labels):
-        #     image = Image.fromarray(image)
-        #     image = ForegroundImage(image, label, 0, 0, 0, 0)
-        #     pil_foreground_images.append(image)
-
-        # self.foreground_images = pil_foreground_images
 
         self.superimposed_image = self.background_image.copy()
 
