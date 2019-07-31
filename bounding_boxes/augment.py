@@ -181,15 +181,15 @@ if __name__ == '__main__':
         fg_images = [Image.open(image) for image in fg_image_paths]
         fg_images = fg_images*3
 
+
+        fg_images = [Image.open(image) for image in fg_image_paths]
         fg_image_labels = list(map(lambda x: x.split('/')[-2:][0], fg_image_paths))
-        fg_image_labels = fg_image_labels*3
 
         fg_sampler = list(zip(fg_images, fg_image_labels))
 
-
         for ix in tqdm(range(1, no_images + 1)):
             # Sample `foreground_num` number of images.
-            fg_samples = random.sample(fg_sampler, num_foreground)
+            fg_samples = random.choices(fg_sampler, num_foreground)
             image = SuperimposedImage(seq, fg_samples, next(backgrounds))
             image.superimposed_image.convert('RGB').save(os.path.join(output_dir, f'{ix}.jpg'))
 
