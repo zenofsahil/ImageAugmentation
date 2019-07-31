@@ -1,8 +1,11 @@
 import os
 import numpy as np
 import random
+import logging
 from PIL import Image
 from foreground_image import ForegroundImage
+
+logger = logging.getLogger(__name__)
 
 class SuperimposedImage(object):
     """
@@ -40,6 +43,7 @@ class SuperimposedImage(object):
         """
         Read, (augment) and populate the foreground images."
         """
+        logger.info('Processing foreground images and adding augmentations.')
 
         ### Apply augmentations to the images ###
 
@@ -62,6 +66,8 @@ class SuperimposedImage(object):
         Randomly resize each augmented foreground image and paste it onto a 
         random (x, y) coordinate on the background image.
         """
+
+        logger.info('Superimposing foregrounds onto given background.')
 
         new_fg_images = []
         for fg_image in self.foreground_images:
