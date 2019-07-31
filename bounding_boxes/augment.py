@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import random
+import logging
 import argparse
 import imgaug as ia
 from imgaug import augmenters as iaa
@@ -11,6 +12,9 @@ from itertools import cycle
 
 from foreground_image import ForegroundImage
 from superimposed_image import SuperimposedImage
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 """
 This script will apply distortions such as cropping/rotation/skew on the foreground images
@@ -103,6 +107,8 @@ seq = iaa.Sequential(
     random_order=True
 )
 
+logger.info('ImgAug pipeline defined.')
+
 if __name__ == '__main__':
     description = "Create augmented dataset with set of foreground images imposed on different backgrounds."
 
@@ -160,6 +166,7 @@ if __name__ == '__main__':
     label_file_path = args.labelfile
 
     with open(args.labelfile, 'w') as label_file:
+        logger.info(f'Initialising label output file {args.labelfile}')
         label_file.write(
                 "filename" + "," + \
                 "width" + "," + \
@@ -173,14 +180,15 @@ if __name__ == '__main__':
         backgrounds = cycle(glob(os.path.join(background_path, '*')))
 
         fg_image_dirs = glob(os.path.join(foreground_path, '*'))
-        fg_image_classes = [glob(os.path.join(image_dir, '*')) for image_dir in fg_image_dirs]
-        fg_image_paths = [image_path for image_class in fg_image_classes for image_path in image_class]
+        logger.info(f'Found foreground image directories {fg_image_dirs}')
 
-        # Repeat lists to be sampled so that there is a possibility of getting the same 
-        # distinct image in the same sample.
-        fg_images = [Image.open(image) for image in fg_image_paths]
-        fg_images = fg_images*3
+        fg_image_classes = [glob(os.path.join(image_dir, '*')) 
+            for image_dir in fg_image_dirs]
+        logger.info(f'Found foreground image classes: {fg_image_classes}')
 
+        fg_image_paths = [image_path 
+            for image_class in fg_image_classes 
+            for image_path in image_class]
 
         fg_images = [Image.open(image) for image in fg_image_paths]
         fg_image_labels = list(map(lambda x: x.split('/')[-2:][0], fg_image_paths))
@@ -193,6 +201,7 @@ if __name__ == '__main__':
             image = SuperimposedImage(seq, fg_samples, next(backgrounds))
             image.superimposed_image.convert('RGB').save(os.path.join(output_dir, f'{ix}.jpg'))
 
+            logger.info('Populating label file with bounding box data.')
             for fg_image in image.foreground_images:
                 label_file.write(
                         f'{ix}.jpg' + ',' + \
